@@ -28,6 +28,7 @@
       version = rustCrate.version;
       src = pkgs.lib.cleanSource ./.;
       LEPTOS_OUTPUT_NAME = rustCrate.metadata.leptos.output-name;
+      RUST_BACKTRACE = "full";
     };
     packages.x86_64-linux.default = inputs.self.packages.x86_64-linux.rpr;
 

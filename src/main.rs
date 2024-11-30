@@ -6,6 +6,8 @@ use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() {
+    color_backtrace::install();
+
     // Setting this to None means we'll be using cargo-leptos and its env vars
     let conf = get_configuration(Some("Cargo.toml")).unwrap();
     let leptos_options = conf.leptos_options;

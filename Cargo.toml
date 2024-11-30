@@ -23,6 +23,8 @@ wasm-bindgen = "=0.2.95"
 thiserror = "2.0.3"
 tracing = { version = "0.1.41", optional = true }
 http = "1.1.0"
+leptos-use = { version = "=0.14.0-rc5" }
+color-backtrace = { version = "0.6", optional = true }
 
 [features]
 default = ["ssr"]
@@ -37,6 +39,9 @@ ssr = [
   "leptos_meta/ssr",
   "leptos_router/ssr",
   "dep:tracing",
+  "dep:color-backtrace",
+  "leptos-use/axum",
+  "leptos-use/ssr",
 ]
 
 [package.metadata.leptos]
