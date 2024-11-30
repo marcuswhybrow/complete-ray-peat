@@ -2,9 +2,5 @@ result
 result-bin
 target
 build
-*_templ.go
-/ray-peat-rodeo
-/audio
-
-/.direnv
-/node_modules
+.direnv
+tailwind.config.js

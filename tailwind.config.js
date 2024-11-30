@@ -1,20 +1,12 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
-  content: [
-    './cmd/ray-peat-rodeo/**/*.{templ,go}',
-    './internal/**/*.{templ,go}',
-    './assets/**/*.md',
-    './build/index.html'
-  ],
-  theme: {
-    extend: {
-      backgroundImage: {
-        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-      }
+    module.exports = {
+      content: {
+        relative: true,
+        files: ["*.html", "./src/**/*.rs"],
+      },
+      theme: {
+        extend: {},
+      },
+      plugins: [],
     }
-  },
-  plugins: [
-    require('tailwind-scrollbar'),
-  ],
-}
-
+    

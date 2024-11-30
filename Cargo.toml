@@ -1,0 +1,77 @@
+[package]
+name = "rpr"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+axum = { version = "0.7.9", optional = true }
+console_error_panic_hook = "0.1.7"
+leptos = { version = "0.7.0-rc2" }
+leptos_meta = { version = "0.7.0-rc2" }
+leptos_axum = { version = "0.7.0-rc2", optional = true }
+leptos_router = { version = "0.7.0-rc2" }
+tokio = { version = "1.41.1", features = [
+  "rt-multi-thread",
+  "macros",
+], optional = true }
+tower = { version = "0.4.13", optional = true }
+tower-http = { version = "0.5.2", features = ["fs"], optional = true }
+wasm-bindgen = "=0.2.95"
+thiserror = "2.0.3"
+tracing = { version = "0.1.41", optional = true }
+http = "1.1.0"
+
+[features]
+default = ["ssr"]
+hydrate = ["leptos/hydrate"]
+ssr = [
+  "dep:axum",
+  "dep:tokio",
+  "dep:tower",
+  "dep:tower-http",
+  "dep:leptos_axum",
+  "leptos/ssr",
+  "leptos_meta/ssr",
+  "leptos_router/ssr",
+  "dep:tracing",
+]
+
+[package.metadata.leptos]
+# The name used by wasm-bindgen/cargo-leptos for the JS/WASM bundle. Defaults to the crate name
+output-name = "rpr"
+# The site root folder is where cargo-leptos generate all output. WARNING: all content of this folder will be erased on a rebuild. Use it in your server setup.
+site-root = "target/site"
+# The site-root relative folder where all compiled output (JS, WASM and CSS) is written
+site-pkg-dir = "pkg"
+# [Optional] The tailwind input file. Activates the tailwind build
+tailwind-input-file = "style/tailwind.css"
+# [Optional] Files in the asset-dir will be copied to the site-root directory
+assets-dir = "public"
+# The IP and port (ex: 127.0.0.1:3000) where the server serves the content. Use it in your server setup.
+# 0.0.0.0 listens on all IP addresses, which is necessary for accepting request from other machines.
+# If the server is running inside of WSL, remember to foward the correct ports from Windows to the WSL IP address.
+# `ifconfig` on the WSL instance reports it's IP usually as eth0.
+# `netsh interface portproxy show v4tov4` on Windows Command Line whos existing rules.
+# `netsh interface portproxy set v4tov4 listenaddress=0.0.0.0 listenport=3000 connectaddress=172.24.132.130 connectport=3000`
+#  adds new rules
+site-addr = "0.0.0.0:3000"
+# The port to use for automatic reload monitoring
+reload-port = 3001
+#  The browserlist query used for optimizing the CSS.
+browserquery = "defaults"
+# Set by cargo-leptos watch when building with that tool. Controls whether autoreload JS will be included in the head
+watch = false
+# The environment Leptos will run in, usually either "DEV" or "PROD"
+env = "DEV"
+# The features to use when compiling the bin target
+# Can be over-ridden with the command line parameter --bin-features
+bin-features = ["ssr"]
+# If the --no-default-features flag should be used when compiling the bin target
+bin-default-features = false
+# The features to use when compiling the lib target
+lib-features = ["hydrate"]
+# If the --no-default-features flag should be used when compiling the lib target
+lib-default-features = false
