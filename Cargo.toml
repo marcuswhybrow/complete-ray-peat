@@ -9,29 +9,40 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 axum = { version = "0.7.9", optional = true }
 console_error_panic_hook = "0.1.7"
-leptos = { version = "0.7.0-rc2" }
-leptos_meta = { version = "0.7.0-rc2" }
-leptos_axum = { version = "0.7.0-rc2", optional = true }
-leptos_router = { version = "0.7.0-rc2" }
+leptos = { version = "0.7.0" }
+leptos_meta = { version = "0.7.0" }
+leptos_axum = { version = "0.7.0", optional = true }
+leptos_router = { version = "0.7.0" }
 tokio = { version = "1.41.1", features = [
   "rt-multi-thread",
   "macros",
 ], optional = true }
+tokio-stream = { version = "0.1.16", features= ["fs"], optional = true }
 tower = { version = "0.4.13", optional = true }
 tower-http = { version = "0.5.2", features = ["fs"], optional = true }
-wasm-bindgen = "=0.2.95"
 thiserror = "2.0.3"
 tracing = { version = "0.1.41", optional = true }
 http = "1.1.0"
 leptos-use = { version = "=0.14.0-rc5" }
 color-backtrace = { version = "0.6", optional = true }
+notify = { version = "6", optional = true }
+futures = { version = "0.3" }
+serde = "1.0.215"
+serde_yaml = "0.9.34"
+markdown-it = { version = "0.6.1", optional = true }
+anyhow = "1.0.93"
+web-sys = "0.3.72"
+wasm-bindgen = "=0.2.95"
+wasm-bindgen-futures = "0.4.45"
+next_tuple = "0.1.0"
 
 [features]
 default = ["ssr"]
-hydrate = ["leptos/hydrate"]
+hydrate = [ "leptos/hydrate" ]
 ssr = [
   "dep:axum",
   "dep:tokio",
+  "dep:tokio-stream",
   "dep:tower",
   "dep:tower-http",
   "dep:leptos_axum",
@@ -42,6 +53,8 @@ ssr = [
   "dep:color-backtrace",
   "leptos-use/axum",
   "leptos-use/ssr",
+  "dep:notify",
+  "dep:markdown-it",
 ]
 
 [package.metadata.leptos]
