@@ -2,7 +2,6 @@ use axum::Router;
 use leptos::prelude::*;
 use leptos_axum::LeptosRoutes;
 use rpr::app::shell;
-use rpr::catalog::Catalog;
 use tokio::net::TcpListener;
 
 #[tokio::main]

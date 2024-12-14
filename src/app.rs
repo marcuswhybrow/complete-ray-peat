@@ -1,20 +1,13 @@
 use anyhow::Result;
 use core::panic;
 use futures::{channel::mpsc, Stream};
-use leptos::{
-    html::span,
-    leptos_dom::logging::{console_error, console_log},
-    prelude::*,
-    tachys,
-};
+use leptos::{html::span, leptos_dom::logging::console_error, prelude::*};
 use leptos_meta::*;
 use leptos_router::{
     components::{FlatRoutes, Route, Router},
     hooks::use_params,
     params::Params,
     path,
-    static_routes::StaticRoute,
-    SsrMode,
 };
 use leptos_use::{
     breakpoints_tailwind, use_breakpoints, use_element_bounding, BreakpointsTailwind as Tailwind,
@@ -23,7 +16,10 @@ use serde::{Deserialize, Serialize};
 use std::{path::Path, time::Duration};
 use thiserror::Error;
 
-use crate::catalog::{self, Catalog};
+use crate::{
+    asset::{Asset, Cached, HasElements},
+    catalog::Catalog,
+};
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -200,7 +196,6 @@ pub enum AssetError {
 
 #[server]
 async fn get_catalog() -> Result<Catalog, ServerFnError> {
-    println!("Creating asset catalog");
     let catalog = Catalog::new(&Path::new("./assets"))
         .await
         .expect("Failed to build catalog");
@@ -268,7 +263,7 @@ fn Asset() -> impl IntoView {
                 <h1 class="text-4xl font-bold tracking-tight mb-8">{ move||asset.get().map(|a| a.to_title()) }</h1>
                 { move || {
                     if let Some(asset) = asset.get() {
-                        asset.elements.into_view().into_any()
+                        asset.elements().into_view().into_any()
                     } else {
                         span().child("No view").into_any()
                     }
@@ -396,7 +391,7 @@ fn Sidebar(visible: RwSignal<bool>, search: RwSignal<String>) -> impl IntoView {
                     .contains(&search.get().trim().to_lowercase())
             })
             .cloned()
-            .collect::<Vec<crate::asset::Asset>>()
+            .collect::<Vec<Asset<Cached>>>()
     });
 
     view! {

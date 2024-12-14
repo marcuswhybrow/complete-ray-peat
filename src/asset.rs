@@ -1,5 +1,14 @@
+use leptos::leptos_dom::logging::console_log;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
+
+#[cfg(feature = "ssr")]
+use markdown_it::parser::extset::MarkdownItExt;
+
+use crate::markdown::Element;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AssetKind {
@@ -69,67 +78,63 @@ pub struct AssetFrontMatterAdded {
     pub date: String,
 }
 
+type ContributorInitials = String;
+type ContributorFullName = String;
+type AssetContributors = BTreeMap<ContributorInitials, ContributorFullName>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetFrontMatter {
     pub source: AssetFrontMatterSource,
     pub transcription: Option<AssetFrontMatterTranscription>,
     pub completion: Option<AssetFrontMatterCompletion>,
     pub added: Option<AssetFrontMatterAdded>,
+
+    #[serde(rename = "speakers")]
+    pub contributors: Option<AssetContributors>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Asset {
+pub struct Unparsed;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Parsed;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Cached;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Asset<State = Unparsed> {
     pub path: PathBuf,
-    pub content: String,
-    pub frontmatter: Option<AssetFrontMatter>,
-    pub markdown: String,
+    pub frontmatter: AssetFrontMatter,
+    markdown: Option<String>,
     pub date: String,
     pub slug: String,
-    pub elements: crate::markdown::Element,
+    elements: Option<crate::markdown::Element>,
+    state: std::marker::PhantomData<State>,
 }
 
 impl Asset {
     const CACHE_PATH: &str = "./cache/assets";
-
-    pub fn to_title(&self) -> String {
-        let Some(frontmatter) = self.frontmatter.as_ref() else {
-            return String::default();
-        };
-        frontmatter.source.title.clone().unwrap_or_default()
-    }
 
     pub fn cache_path(slug: &str) -> PathBuf {
         Path::new(Asset::CACHE_PATH).join(format!("{}.yml", slug))
     }
 
     #[cfg(feature = "ssr")]
-    pub fn cache(&self) -> Result<(), &'static str> {
-        use std::fs;
-        let path = Asset::cache_path(&self.slug);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let cache = fs::File::create(&path).map_err(|_| "Failed to create cache file")?;
-        serde_yaml::to_writer(&cache, self).map_err(|_| "Failed to write to cache file")?;
-        Ok(())
-    }
+    pub async fn try_from_cache(path: &Path) -> Result<Asset<Cached>, &'static str> {
+        use tokio::fs;
 
-    #[cfg(feature = "ssr")]
-    pub fn try_from_cache(slug: &str) -> Result<Self, &'static str> {
-        use std::fs;
+        let (_, slug) = Self::parse_path(path).expect("Failed to parse path");
 
-        let cache_path = Asset::cache_path(slug);
-        let bytes = fs::read(&cache_path).map_err(|_| "Failed to read cache")?;
+        let cache_path = Asset::cache_path(&slug);
+        let bytes = fs::read(&cache_path)
+            .await
+            .map_err(|_| "Failed to read cache")?;
         let asset = serde_yaml::from_slice(&bytes).map_err(|_| "Failed to deserialize cache")?;
         Ok(asset)
     }
-}
 
-#[cfg(feature = "ssr")]
-impl TryFrom<PathBuf> for Asset {
-    type Error = &'static str;
-
-    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
-        use crate::markdown::Element;
-
+    pub fn parse_path(path: &Path) -> Result<(String, String), &'static str> {
         let date_len = "0000-00-00".len();
         let stem = path
             .file_stem()
@@ -138,48 +143,135 @@ impl TryFrom<PathBuf> for Asset {
             .to_string();
         let date = stem[..date_len].to_string();
         let slug = stem[date_len + 1..].to_string();
+        Ok((date, slug))
+    }
+}
 
-        if let Ok(asset) = Asset::try_from_cache(&slug) {
-            return Ok(asset);
-        }
+impl<State> Asset<State> {
+    pub fn to_title(&self) -> String {
+        self.frontmatter.source.title.clone().unwrap_or_default()
+    }
+}
 
+#[cfg(feature = "ssr")]
+impl Asset<Unparsed> {
+    pub fn new_unparsed(path: PathBuf) -> Result<Asset<Unparsed>, &'static str> {
         let content = std::fs::read_to_string(&path).map_err(|_| "Failed to read asset")?;
-        let (frontmatter, markdown): (Option<AssetFrontMatter>, String) = {
-            if content.starts_with("---") {
-                if let Some(end) = content[3..].find("---") {
-                    let source = &content[3..end + 3];
-                    let markdown = &content[end + 6..];
-                    (
-                        Some(serde_yaml::from_str(source).unwrap()),
-                        markdown.to_owned(),
-                    )
-                } else {
-                    (None, content.clone())
-                }
-            } else {
-                (None, content.clone())
-            }
+
+        if !content.starts_with("---") {
+            panic!(
+                "Asset does not start with '---' to begin frontmatter: {}",
+                path.display()
+            );
+        }
+        let Some(end) = content[3..].find("\n---\n") else {
+            panic!(
+                "Asset begins with '---' to begin frontmatter but there is no closing '---': {}",
+                path.display()
+            );
         };
 
-        let parser = &mut markdown_it::MarkdownIt::new();
-        markdown_it::plugins::cmark::add(parser);
-        markdown_it::plugins::extra::add(parser);
+        let source = &content[3..end + 3];
+        let markdown = content[end + 6..].to_string();
+        let frontmatter = serde_yaml::from_str(source).expect(&format!(
+            "Failed to deserialize YAML frontmatter for asset {}",
+            path.display()
+        ));
 
-        let ast = parser.parse(&markdown);
-        let elements = Element::new(&ast);
+        let (date, slug) = Self::parse_path(&path).expect("Failed to parse path");
 
         let asset = Asset {
             date,
             slug,
-            content,
             path: path.into(),
             frontmatter,
-            markdown,
-            elements,
+            markdown: Some(markdown),
+            elements: None,
+            state: std::marker::PhantomData::<Unparsed>,
         };
-
-        asset.cache().map_err(|_| "Failed to cache asset")?;
 
         Ok(asset)
     }
+
+    pub fn parse(mut self) -> Asset<Parsed> {
+        let parser = &mut markdown_it::MarkdownIt::new();
+        let markdown = self.markdown.take().expect("Markdown was None");
+        parser.ext.insert(self);
+        markdown_it::plugins::cmark::add(parser);
+        markdown_it::plugins::extra::add(parser);
+        crate::markdown::timecode::add(parser);
+        // crate::markdown::mention::add(parser);
+        crate::markdown::sidenote::add(parser);
+        crate::markdown::utterance::add(parser);
+
+        let ast = parser.parse(&markdown);
+
+        let asset = parser.ext.remove::<Asset>().expect("Asset not in context");
+
+        Asset {
+            path: asset.path,
+            frontmatter: asset.frontmatter,
+            markdown: None,
+            date: asset.date,
+            slug: asset.slug,
+            elements: Some(Element::new(&ast)),
+            state: std::marker::PhantomData::<Parsed>,
+        }
+    }
 }
+
+#[cfg(feature = "ssr")]
+impl Asset<Parsed> {
+    pub fn new_parsed(path: PathBuf) -> Result<Asset<Parsed>, &'static str> {
+        Ok(Asset::new_unparsed(path)?.parse())
+    }
+
+    #[cfg(feature = "ssr")]
+    pub fn cache(self) -> Result<Asset<Cached>, &'static str> {
+        use std::fs;
+        let path = Asset::cache_path(&self.slug);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let cache = fs::File::create(&path).map_err(|_| "Failed to create cache file")?;
+        serde_yaml::to_writer(&cache, &self).map_err(|_| "Failed to write to cache file")?;
+
+        Ok(Asset {
+            path: self.path,
+            frontmatter: self.frontmatter,
+            markdown: None,
+            date: self.date,
+            slug: self.slug,
+            elements: self.elements,
+            state: std::marker::PhantomData::<Cached>,
+        })
+    }
+}
+
+#[cfg(feature = "ssr")]
+impl Asset<Cached> {
+    pub async fn new_cached(path: PathBuf) -> Result<Asset<Cached>, &'static str> {
+        let cached = Asset::try_from_cache(&path).await;
+        match cached {
+            Ok(cached) => Ok(cached),
+            Err(_) => Asset::new_parsed(path)?.cache(),
+        }
+    }
+}
+
+pub trait HasElements {
+    fn elements(&self) -> &Element;
+}
+
+impl HasElements for Asset<Parsed> {
+    fn elements(&self) -> &Element {
+        self.elements.as_ref().expect("elements was None")
+    }
+}
+
+impl HasElements for Asset<Cached> {
+    fn elements(&self) -> &Element {
+        self.elements.as_ref().expect("elements was None")
+    }
+}
+
+#[cfg(feature = "ssr")]
+impl MarkdownItExt for Asset<Unparsed> {}

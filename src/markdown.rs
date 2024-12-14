@@ -1,6 +1,18 @@
 #[cfg(feature = "ssr")]
+pub mod mention;
+#[cfg(feature = "ssr")]
+pub mod sidenote;
+#[cfg(feature = "ssr")]
+pub mod timecode;
+#[cfg(feature = "ssr")]
+pub mod utterance;
+
+#[cfg(feature = "ssr")]
 use markdown_it::{
-    parser::inline::{Text, TextSpecial},
+    parser::{
+        block::BlockState,
+        inline::{InlineState, Text, TextSpecial},
+    },
     plugins::{
         cmark::{
             block::{
@@ -31,6 +43,7 @@ use markdown_it::{
         },
         html::{html_block::HtmlBlock, html_inline::HtmlInline},
     },
+    Node,
 };
 
 use core::panic;
@@ -148,6 +161,20 @@ pub enum Element {
     HtmlInline {
         content: String,
     },
+    Timecode {
+        url: String,
+        hours: u8,
+        minutes: u8,
+        seconds: u8,
+    },
+    Sidenote {
+        children: Vec<Self>,
+    },
+    Utterance {
+        shortname: String,
+        longname: String,
+        children: Vec<Self>,
+    },
 }
 
 #[cfg(feature = "ssr")]
@@ -185,6 +212,9 @@ impl Element {
     #[cfg(feature = "ssr")]
     pub fn new(node: &markdown_it::Node) -> Self {
         use markdown_it::parser::core::Root;
+        use sidenote::InlineSidenote;
+        use timecode::InlineTimecode;
+        use utterance::Utterance;
 
         let children = node
             .children
@@ -300,6 +330,21 @@ impl Element {
         } else if let Some(html_inline) = node.cast::<HtmlInline>() {
             Self::HtmlInline {
                 content: html_inline.content.clone(),
+            }
+        } else if let Some(timecode) = node.cast::<InlineTimecode>() {
+            Self::Timecode {
+                url: timecode.url.to_string(),
+                hours: timecode.hours,
+                minutes: timecode.minutes,
+                seconds: timecode.seconds,
+            }
+        } else if let Some(_sidenote) = node.cast::<InlineSidenote>() {
+            Self::Sidenote { children }
+        } else if let Some(utterance) = node.cast::<Utterance>() {
+            Self::Utterance {
+                shortname: utterance.shortname.clone(),
+                longname: utterance.longname.clone(),
+                children,
             }
         } else {
             panic!("Unknown node {}", node.name())
@@ -578,6 +623,94 @@ impl Element {
                     .into_any(),
                 _ => panic!("Illegal heading level '{level}'"),
             },
+            Element::Timecode {
+                url,
+                hours,
+                minutes,
+                seconds,
+            } => html::a()
+                .href(url.clone())
+                .class("p-2 bg-sky-200 rounded")
+                .child(format!("{:0>2}:{:0>2}:{:0>2}", hours, minutes, seconds))
+                .into_any(),
+            Element::Sidenote { children } => html::span()
+                .class("text-slate-400")
+                .child(
+                    children
+                        .into_iter()
+                        .map(|c| c.into_view_rec(context))
+                        .collect::<Vec<AnyView>>(),
+                )
+                .into_any(),
+            Element::Utterance {
+                longname, children, ..
+            } => html::div()
+                .class("mb-8")
+                .child(
+                    html::div()
+                        .child(longname.clone())
+                        .class("text-slate-600 text-sm mb-4"),
+                )
+                .child(
+                    html::div().child(
+                        children
+                            .into_iter()
+                            .map(|c| c.into_view_rec(context))
+                            .collect::<Vec<AnyView>>(),
+                    ),
+                )
+                .into_any(),
         }
+    }
+}
+
+#[cfg(feature = "ssr")]
+pub trait Tokenize {
+    fn tokenize(&mut self, from: usize, to: usize, node: Node) -> Node;
+}
+
+/// Inspiration: https://github.com/rlidwka/markdown-it.rs/blob/eb5459039685d19cefd0361859422118d08d35d4/src/generics/inline/full_link.rs#L124-L136
+#[cfg(feature = "ssr")]
+impl<'a, 'b> Tokenize for markdown_it::parser::inline::InlineState<'a, 'b> {
+    fn tokenize(&mut self, from: usize, to: usize, node: Node) -> Node {
+        let node = std::mem::replace(&mut self.node, node);
+        let pos = std::mem::replace(&mut self.pos, from);
+        let pos_max = std::mem::replace(&mut self.pos_max, to);
+
+        self.md.inline.tokenize(self);
+
+        self.pos = pos;
+        self.pos_max = pos_max;
+        std::mem::replace(&mut self.node, node)
+    }
+}
+
+#[cfg(feature = "ssr")]
+impl<'a, 'b> Tokenize for markdown_it::parser::block::BlockState<'a, 'b> {
+    fn tokenize(&mut self, from: usize, to: usize, node: Node) -> Node {
+        let node = std::mem::replace(&mut self.node, node);
+        let line_max = std::mem::replace(&mut self.line_max, to);
+        let line = std::mem::replace(&mut self.line, from);
+
+        self.md.block.tokenize(self);
+
+        self.line = line;
+        self.line_max = line_max;
+        std::mem::replace(&mut self.node, node)
+    }
+}
+
+#[cfg(feature = "ssr")]
+pub trait OtherLine {
+    fn test_rules_at_other_line(&mut self, line: usize) -> bool;
+}
+
+#[cfg(feature = "ssr")]
+impl<'a, 'b> OtherLine for BlockState<'a, 'b> {
+    fn test_rules_at_other_line(&mut self, line: usize) -> bool {
+        let line = std::mem::replace(&mut self.line, line);
+        let test = self.test_rules_at_line();
+        let _ = std::mem::replace(&mut self.line, line);
+        test
     }
 }
